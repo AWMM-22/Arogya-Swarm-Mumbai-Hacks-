@@ -397,8 +397,8 @@ const KeyFeaturesSection = () => {
                        <feature.icon className={`w-8 h-8 mb-1 transition-colors ${hoveredIndex === i ? 'text-[#00C2FF]' : 'text-gray-400'}`} />
                     </div>
                     
-                    {/* Headline Below Node */}
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-3 text-center w-40 pointer-events-none">
+                    {/* Headline Below Node - Adjusted for top node to avoid line overlap */}
+                    <div className={`absolute left-1/2 -translate-x-1/2 text-center w-40 pointer-events-none ${i === 0 ? 'bottom-full mb-3' : 'top-full mt-3'}`}>
                        <span className={`text-sm font-bold uppercase tracking-wider transition-colors ${hoveredIndex === i ? 'text-white' : 'text-gray-500'}`}>
                          {feature.title}
                        </span>

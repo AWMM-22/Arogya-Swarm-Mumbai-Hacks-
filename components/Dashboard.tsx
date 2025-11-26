@@ -60,10 +60,31 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [isVoiceActive, setIsVoiceActive] = useState(false);
   const [isFeedPaused, setIsFeedPaused] = useState(false);
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const logsContainerRef = useRef<HTMLDivElement>(null);
 
   const stats = SCENARIO_CONFIG[activeScenario];
   const chartData = generateChartData(activeScenario);
+
+  // --- Dynamic CSS Variables based on Theme ---
+  const cssVariables = {
+    '--bg-main': theme === 'dark' ? '#050505' : '#F8FAFC',
+    '--bg-surface': theme === 'dark' ? '#0F1115' : '#FFFFFF',
+    '--bg-surface-2': theme === 'dark' ? '#1A1D24' : '#F1F5F9',
+    '--bg-sidebar': theme === 'dark' ? '#0F1115' : '#FFFFFF',
+    '--text-primary': theme === 'dark' ? '#ffffff' : '#0F172A',
+    '--text-secondary': theme === 'dark' ? '#9ca3af' : '#64748B',
+    '--text-muted': theme === 'dark' ? '#6b7280' : '#94A3B8',
+    '--border-main': theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+    '--border-subtle': theme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+    '--element-bg': theme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+    // Charts
+    '--chart-grid': theme === 'dark' ? '#222' : '#e2e8f0',
+    '--chart-axis': theme === 'dark' ? '#555' : '#94a3b8',
+    '--chart-tooltip': theme === 'dark' ? '#1A1D24' : '#FFFFFF',
+    // Header
+    '--header-bg': theme === 'dark' ? 'rgba(5, 5, 5, 0.5)' : 'rgba(255, 255, 255, 0.8)',
+  } as React.CSSProperties;
 
   // --- Live Clock ---
   useEffect(() => {
@@ -156,7 +177,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const renderOverview = () => (
     <div className="space-y-6 animate-slideIn pb-20">
       {/* Top Status Bar Content */}
-      <div className="bg-[#0F1115] border border-white/10 rounded-2xl p-6 shadow-lg">
+      <div className="bg-[var(--bg-surface)] border border-[var(--border-main)] rounded-2xl p-6 shadow-lg transition-colors">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
              <div className="flex flex-col">
                 <span className="text-xs uppercase text-gray-500 font-bold tracking-wider mb-1">Surge Risk</span>
@@ -173,21 +194,21 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
              </div>
              <div className="flex flex-col">
                 <span className="text-xs uppercase text-gray-500 font-bold tracking-wider mb-1">Weather</span>
-                <span className="font-display font-bold text-2xl text-gray-200">{stats.weather}</span>
+                <span className="font-display font-bold text-2xl text-[var(--text-primary)]">{stats.weather}</span>
              </div>
              <div className="flex flex-col">
                 <span className="text-xs uppercase text-gray-500 font-bold tracking-wider mb-1">Sync Status</span>
                 <div className="flex items-center gap-2">
                    <div className="w-2 h-2 rounded-full bg-green-500 animate-ping"></div>
-                   <span className="font-display font-bold text-xl text-gray-200">Active</span>
+                   <span className="font-display font-bold text-xl text-[var(--text-primary)]">Active</span>
                 </div>
              </div>
           </div>
       </div>
 
-      {/* Embedded Simulation Controls - MOVED HERE */}
+      {/* Embedded Simulation Controls */}
       <div className="animate-slideIn">
-        <h3 className="text-lg font-display font-bold text-white mb-4 flex items-center gap-2">
+        <h3 className="text-lg font-display font-bold text-[var(--text-primary)] mb-4 flex items-center gap-2">
             <Icons.ShieldCheck className="w-5 h-5 text-[#00C2FF]" />
             Simulation & Crisis Mode
         </h3>
@@ -199,14 +220,14 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     className={`relative p-4 rounded-xl border text-left transition-all duration-300 group overflow-hidden ${
                     activeScenario === s 
                     ? 'bg-[#00C2FF]/10 border-[#00C2FF] shadow-[0_0_20px_rgba(0,194,255,0.2)]' 
-                    : 'bg-[#0F1115] border-white/5 hover:border-white/20'
+                    : 'bg-[var(--bg-surface)] border-[var(--border-subtle)] hover:border-[var(--border-main)]'
                     }`}
                 >
                     <div className="flex items-center gap-3 mb-2">
-                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${activeScenario === s ? 'bg-[#00C2FF] text-black' : 'bg-white/5 text-gray-400 group-hover:text-white'}`}>
+                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${activeScenario === s ? 'bg-[#00C2FF] text-black' : 'bg-[var(--element-bg)] text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]'}`}>
                             <ScenarioIcon type={s} className="w-4 h-4" />
                         </div>
-                        <span className={`font-bold text-sm ${activeScenario === s ? 'text-[#00C2FF]' : 'text-white'}`}>{s}</span>
+                        <span className={`font-bold text-sm ${activeScenario === s ? 'text-[#00C2FF]' : 'text-[var(--text-primary)]'}`}>{s}</span>
                     </div>
                     <p className="text-[10px] text-gray-500 leading-relaxed">
                         {s === 'Normal' && "Baseline operations."}
@@ -224,15 +245,15 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:h-[500px]">
           {/* Agent Feed */}
-          <div className="lg:col-span-4 bg-[#0F1115] border border-[#00C2FF]/20 rounded-2xl flex flex-col h-[400px] lg:h-full overflow-hidden shadow-[0_0_30px_rgba(0,194,255,0.05)] relative">
-              <div className="p-4 border-b border-white/5 bg-white/5 flex items-center justify-between shrink-0">
-                  <h3 className="font-display font-bold text-white flex items-center gap-2 text-sm uppercase tracking-wider">
+          <div className="lg:col-span-4 bg-[var(--bg-surface)] border border-[#00C2FF]/20 rounded-2xl flex flex-col h-[400px] lg:h-full overflow-hidden shadow-[0_0_30px_rgba(0,194,255,0.05)] relative transition-colors">
+              <div className="p-4 border-b border-[var(--border-subtle)] bg-[var(--element-bg)] flex items-center justify-between shrink-0">
+                  <h3 className="font-display font-bold text-[var(--text-primary)] flex items-center gap-2 text-sm uppercase tracking-wider">
                       <Icons.Radio className="w-4 h-4 text-[#00C2FF] animate-pulse" />
                       Agent Neural Feed
                   </h3>
                   <button 
                     onClick={() => setIsFeedPaused(!isFeedPaused)} 
-                    className="text-[10px] font-bold uppercase tracking-wider text-gray-500 hover:text-white transition-colors"
+                    className="text-[10px] font-bold uppercase tracking-wider text-gray-500 hover:text-[var(--text-primary)] transition-colors"
                   >
                     {isFeedPaused ? 'Resume' : 'Pause'}
                   </button>
@@ -241,7 +262,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 className="flex-1 overflow-y-auto p-4 space-y-4 font-mono text-xs no-scrollbar relative scroll-smooth" 
                 ref={logsContainerRef}
               >
-                  <div className="absolute left-[19px] top-0 bottom-0 w-px bg-white/5 h-full"></div>
+                  <div className="absolute left-[19px] top-0 bottom-0 w-px bg-[var(--border-subtle)] h-full"></div>
                   {logs.map((log) => (
                       <div key={log.id} className={`flex gap-3 animate-slideIn opacity-0 relative z-10 ${log.isImportant ? 'bg-red-500/5 -mx-2 px-2 py-2 rounded border-l-2 border-red-500' : ''}`} style={{animation: 'slideInRight 0.3s forwards'}}>
                           <div className="flex flex-col items-center shrink-0 w-4">
@@ -262,7 +283,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                   </span>
                                   <span className="text-gray-600 text-[9px]">{log.time}</span>
                               </div>
-                              <p className={`leading-relaxed ${log.isImportant ? 'text-red-200' : 'text-gray-400'}`}>{log.message}</p>
+                              <p className={`leading-relaxed ${log.isImportant ? 'text-red-400' : 'text-[var(--text-secondary)]'}`}>{log.message}</p>
                           </div>
                       </div>
                   ))}
@@ -270,11 +291,11 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           </div>
 
           {/* Surge Graph */}
-          <div className="lg:col-span-8 bg-[#0F1115] border border-white/10 rounded-2xl p-6 relative overflow-hidden group flex flex-col h-[400px] lg:h-full">
+          <div className="lg:col-span-8 bg-[var(--bg-surface)] border border-[var(--border-main)] rounded-2xl p-6 relative overflow-hidden group flex flex-col h-[400px] lg:h-full transition-colors">
                <div className="flex justify-between items-start mb-2 shrink-0 relative z-10">
                    <div>
-                       <h3 className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-1">Surge Prediction Engine</h3>
-                       <h2 className="text-2xl font-display font-bold text-white flex items-center gap-3">
+                       <h3 className="text-[var(--text-secondary)] text-xs font-bold uppercase tracking-widest mb-1">Surge Prediction Engine</h3>
+                       <h2 className="text-2xl font-display font-bold text-[var(--text-primary)] flex items-center gap-3">
                           48-Hour Forecast
                           <span className="px-2 py-1 rounded text-[10px] font-mono bg-[#00C2FF]/10 text-[#00C2FF] border border-[#00C2FF]/20 flex items-center gap-1">
                              <Icons.Brain className="w-3 h-3" /> 94% CONFIDENCE
@@ -282,8 +303,8 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                        </h2>
                    </div>
                    <div className="text-right">
-                      <div className="text-xs text-gray-400 mb-1">Projected Peak</div>
-                      <div className="text-xl font-bold text-white">
+                      <div className="text-xs text-[var(--text-secondary)] mb-1">Projected Peak</div>
+                      <div className="text-xl font-bold text-[var(--text-primary)]">
                          {activeScenario === 'Normal' ? '14:00' : '02:00'} <span className="text-sm text-gray-500">Tomorrow</span>
                       </div>
                    </div>
@@ -297,13 +318,13 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                    <stop offset="95%" stopColor={activeScenario === 'Normal' ? '#00C2FF' : '#EF4444'} stopOpacity={0}/>
                                </linearGradient>
                            </defs>
-                           <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
-                           <XAxis dataKey="time" stroke="#555" fontSize={10} tickLine={false} axisLine={false} minTickGap={40} />
-                           <YAxis stroke="#555" fontSize={10} tickLine={false} axisLine={false} />
+                           <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false} />
+                           <XAxis dataKey="time" stroke="var(--chart-axis)" fontSize={10} tickLine={false} axisLine={false} minTickGap={40} />
+                           <YAxis stroke="var(--chart-axis)" fontSize={10} tickLine={false} axisLine={false} />
                            <Tooltip 
-                              contentStyle={{ backgroundColor: '#1A1D24', borderColor: '#333', borderRadius: '8px', boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}
-                              itemStyle={{ color: '#fff', fontSize: '12px', fontWeight: 'bold' }}
-                              labelStyle={{ color: '#888', marginBottom: '4px', fontSize: '10px' }}
+                              contentStyle={{ backgroundColor: 'var(--chart-tooltip)', borderColor: 'var(--border-main)', borderRadius: '8px', boxShadow: '0 4px 20px rgba(0,0,0,0.2)', color: 'var(--text-primary)' }}
+                              itemStyle={{ color: 'var(--text-primary)', fontSize: '12px', fontWeight: 'bold' }}
+                              labelStyle={{ color: 'var(--text-secondary)', marginBottom: '4px', fontSize: '10px' }}
                            />
                            <Area 
                               type="monotone" 
@@ -334,7 +355,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const renderResources = () => (
     <div className="animate-slideIn h-full">
-       <h2 className="text-2xl font-display font-bold text-white mb-6">Real-time Resources</h2>
+       <h2 className="text-2xl font-display font-bold text-[var(--text-primary)] mb-6">Real-time Resources</h2>
        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 h-[calc(100%-60px)]">
             <ResourcePanel 
                title="Bed Capacity"
@@ -348,6 +369,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                ]}
                status={stats.beds.free < 20 ? 'critical' : stats.beds.free < 50 ? 'warning' : 'safe'}
                icon={Icons.LayoutDashboard}
+               cssVariables={cssVariables}
             />
             <ResourcePanel 
                title="Medical Staff"
@@ -361,6 +383,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                ]}
                status={stats.staff.idle < 2 ? 'warning' : 'safe'}
                icon={Icons.Users}
+               cssVariables={cssVariables}
             />
             <ResourcePanel 
                title="Key Supplies"
@@ -374,6 +397,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                ]}
                status={stats.oxygen < 40 ? 'critical' : 'safe'}
                icon={Icons.Package}
+               cssVariables={cssVariables}
             />
             <ResourcePanel 
                title="Ambulance Fleet"
@@ -387,6 +411,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                ]}
                status={'safe'}
                icon={Icons.Truck}
+               cssVariables={cssVariables}
             />
         </div>
     </div>
@@ -395,21 +420,21 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const renderDecisions = () => (
     <div className="animate-slideIn h-full flex flex-col">
        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-display font-bold text-white">AI Decisions & Recommendations</h2>
+          <h2 className="text-2xl font-display font-bold text-[var(--text-primary)]">AI Decisions & Recommendations</h2>
           <div className="text-[10px] bg-yellow-400/10 text-yellow-400 px-3 py-1 rounded-full font-bold uppercase border border-yellow-400/20">
              {recommendations.length} Pending Actions
           </div>
        </div>
        <div className="flex-1 overflow-y-auto no-scrollbar space-y-4">
             {recommendations.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-gray-500 text-sm text-center border border-white/5 rounded-2xl bg-[#0F1115]">
+                <div className="h-full flex flex-col items-center justify-center text-gray-500 text-sm text-center border border-[var(--border-subtle)] rounded-2xl bg-[var(--bg-surface)]">
                     <Icons.CheckCircle2 className="w-16 h-16 mb-4 opacity-20" />
-                    <p className="text-lg text-gray-400 mb-1">System Optimized</p>
+                    <p className="text-lg text-[var(--text-secondary)] mb-1">System Optimized</p>
                     <p className="text-xs opacity-50">No critical actions required at this moment.</p>
                 </div>
             ) : (
                 recommendations.map(rec => (
-                    <div key={rec.id} className="bg-[#1A1D24] border border-white/5 p-6 rounded-2xl flex flex-col md:flex-row gap-6 items-start md:items-center justify-between group hover:border-[#00C2FF]/30 transition-all shadow-lg">
+                    <div key={rec.id} className="bg-[var(--bg-surface-2)] border border-[var(--border-subtle)] p-6 rounded-2xl flex flex-col md:flex-row gap-6 items-start md:items-center justify-between group hover:border-[#00C2FF]/30 transition-all shadow-lg">
                         <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
                                 <span className="text-[10px] uppercase font-bold text-gray-500 tracking-wider flex items-center gap-1.5">
@@ -418,15 +443,15 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                 </span>
                                 <span className="text-[10px] uppercase font-bold text-[#00C2FF] bg-[#00C2FF]/10 px-2 py-0.5 rounded border border-[#00C2FF]/20">High Impact</span>
                             </div>
-                            <h4 className="font-display font-bold text-white text-lg mb-2">{rec.action}</h4>
-                            <p className="text-gray-400 text-sm leading-relaxed">{rec.reason}</p>
+                            <h4 className="font-display font-bold text-[var(--text-primary)] text-lg mb-2">{rec.action}</h4>
+                            <p className="text-[var(--text-secondary)] text-sm leading-relaxed">{rec.reason}</p>
                             <div className="mt-3 flex items-center gap-2 text-xs">
                                <span className="text-gray-500">Expected Outcome:</span>
                                <span className="text-green-400 font-bold">{rec.impact}</span>
                             </div>
                         </div>
                         <div className="flex gap-3 w-full md:w-auto shrink-0">
-                            <button className="flex-1 md:flex-none py-3 px-6 bg-white/5 hover:bg-red-500/20 hover:text-red-500 text-gray-400 rounded-xl text-xs font-bold transition-all border border-white/5 uppercase tracking-wide">
+                            <button className="flex-1 md:flex-none py-3 px-6 bg-[var(--element-bg)] hover:bg-red-500/20 hover:text-red-500 text-[var(--text-secondary)] rounded-xl text-xs font-bold transition-all border border-[var(--border-subtle)] uppercase tracking-wide">
                                 Reject
                             </button>
                             <button className="flex-1 md:flex-none py-3 px-8 bg-[#00C2FF] hover:bg-[#00C2FF]/80 text-black rounded-xl text-xs font-bold transition-all shadow-[0_0_20px_rgba(0,194,255,0.3)] uppercase tracking-wide">
@@ -442,14 +467,14 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const renderAdvisory = () => (
     <div className="animate-slideIn h-full flex flex-col">
-       <h2 className="text-2xl font-display font-bold text-white mb-6">Advisory & Notification Center</h2>
+       <h2 className="text-2xl font-display font-bold text-[var(--text-primary)] mb-6">Advisory & Notification Center</h2>
        
        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-full">
            {/* Active Alerts List */}
-           <div className="bg-[#0F1115] border border-white/10 rounded-2xl p-6 flex flex-col">
+           <div className="bg-[var(--bg-surface)] border border-[var(--border-main)] rounded-2xl p-6 flex flex-col transition-colors">
                <div className="flex items-center gap-2 mb-6">
                    <Icons.AlertCircle className="w-5 h-5 text-red-400" />
-                   <h3 className="font-bold text-white">Active System Alerts</h3>
+                   <h3 className="font-bold text-[var(--text-primary)]">Active System Alerts</h3>
                </div>
                <div className="space-y-4 overflow-y-auto pr-2 no-scrollbar">
                    {alerts.length === 0 && (
@@ -460,7 +485,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                            <div className="mt-1"><Icons.AlertCircle className="w-4 h-4 text-red-500" /></div>
                            <div>
                                <h4 className="text-red-400 font-bold text-sm">{alert.title}</h4>
-                               <p className="text-gray-400 text-xs mt-1">{alert.desc}</p>
+                               <p className="text-[var(--text-secondary)] text-xs mt-1">{alert.desc}</p>
                                <span className="text-[10px] text-gray-600 mt-2 block uppercase font-mono">{alert.timestamp}</span>
                            </div>
                        </div>
@@ -470,30 +495,30 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
            {/* Outbound Comms */}
            <div className="space-y-6">
-                <div className="bg-[#1A1D24] border border-white/10 rounded-2xl p-6 relative overflow-hidden group hover:border-[#00C2FF]/30 transition-colors cursor-pointer">
+                <div className="bg-[var(--bg-surface-2)] border border-[var(--border-main)] rounded-2xl p-6 relative overflow-hidden group hover:border-[#00C2FF]/30 transition-colors cursor-pointer">
                     <div className="flex items-center justify-between mb-4">
                         <div className="w-10 h-10 rounded-lg bg-[#00C2FF]/10 flex items-center justify-center">
                             <Icons.Send className="w-5 h-5 text-[#00C2FF]" />
                         </div>
-                        <span className="text-[10px] bg-white/5 text-gray-400 px-2 py-1 rounded">2m ago</span>
+                        <span className="text-[10px] bg-[var(--element-bg)] text-[var(--text-secondary)] px-2 py-1 rounded">2m ago</span>
                     </div>
-                    <h4 className="text-white font-bold mb-1">Patient Advisory Broadcast</h4>
-                    <p className="text-gray-400 text-xs mb-3">Sent to 1,204 registered patients in Sector 4.</p>
-                    <div className="bg-black/40 p-3 rounded border border-white/5 text-xs text-gray-300 font-mono">
+                    <h4 className="text-[var(--text-primary)] font-bold mb-1">Patient Advisory Broadcast</h4>
+                    <p className="text-[var(--text-secondary)] text-xs mb-3">Sent to 1,204 registered patients in Sector 4.</p>
+                    <div className="bg-[var(--element-bg)] p-3 rounded border border-[var(--border-subtle)] text-xs text-[var(--text-secondary)] font-mono">
                         "ER wait times currently >2 hrs. Please visit sector 4 clinic for minor ailments."
                     </div>
                 </div>
 
-                <div className="bg-[#1A1D24] border border-white/10 rounded-2xl p-6 relative overflow-hidden group hover:border-orange-500/30 transition-colors cursor-pointer">
+                <div className="bg-[var(--bg-surface-2)] border border-[var(--border-main)] rounded-2xl p-6 relative overflow-hidden group hover:border-orange-500/30 transition-colors cursor-pointer">
                     <div className="flex items-center justify-between mb-4">
                         <div className="w-10 h-10 rounded-lg bg-orange-500/10 flex items-center justify-center">
                             <Icons.Package className="w-5 h-5 text-orange-400" />
                         </div>
-                        <span className="text-[10px] bg-white/5 text-gray-400 px-2 py-1 rounded">15m ago</span>
+                        <span className="text-[10px] bg-[var(--element-bg)] text-[var(--text-secondary)] px-2 py-1 rounded">15m ago</span>
                     </div>
-                    <h4 className="text-white font-bold mb-1">Supply Chain Automation</h4>
-                    <p className="text-gray-400 text-xs mb-3">Auto-drafted PO #9920 to Primary Vendor.</p>
-                    <div className="bg-black/40 p-3 rounded border border-white/5 text-xs text-gray-300 font-mono">
+                    <h4 className="text-[var(--text-primary)] font-bold mb-1">Supply Chain Automation</h4>
+                    <p className="text-[var(--text-secondary)] text-xs mb-3">Auto-drafted PO #9920 to Primary Vendor.</p>
+                    <div className="bg-[var(--element-bg)] p-3 rounded border border-[var(--border-subtle)] text-xs text-[var(--text-secondary)] font-mono">
                         Refill request for 500 N95 masks. Est delivery: 4h.
                     </div>
                 </div>
@@ -504,50 +529,60 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const renderSettings = () => (
     <div className="animate-slideIn h-full flex flex-col max-w-2xl">
-        <h2 className="text-2xl font-display font-bold text-white mb-8">System Configuration</h2>
+        <h2 className="text-2xl font-display font-bold text-[var(--text-primary)] mb-8">System Configuration</h2>
 
         <div className="space-y-8">
-            <div className="bg-[#1A1D24] border border-white/10 rounded-2xl p-6">
-                <h3 className="text-white font-bold mb-4 flex items-center gap-2">
+            <div className="bg-[var(--bg-surface-2)] border border-[var(--border-main)] rounded-2xl p-6 transition-colors">
+                <h3 className="text-[var(--text-primary)] font-bold mb-4 flex items-center gap-2">
                     <Icons.Eye className="w-5 h-5 text-[#00C2FF]" />
                     Visual Preferences
                 </h3>
                 <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                        <span className="text-gray-400 text-sm">Theme Mode</span>
-                        <div className="flex bg-black/40 p-1 rounded-lg border border-white/5">
-                            <button className="px-4 py-1.5 rounded bg-[#00C2FF] text-black text-xs font-bold">Dark</button>
-                            <button className="px-4 py-1.5 rounded text-gray-500 hover:text-white text-xs font-medium transition-colors">Light</button>
+                        <span className="text-[var(--text-secondary)] text-sm">Theme Mode</span>
+                        <div className="flex bg-[var(--element-bg)] p-1 rounded-lg border border-[var(--border-subtle)]">
+                            <button 
+                                onClick={() => setTheme('dark')}
+                                className={`px-4 py-1.5 rounded text-xs font-bold transition-all ${theme === 'dark' ? 'bg-[#00C2FF] text-black shadow-lg' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+                            >
+                                Dark
+                            </button>
+                            <button 
+                                onClick={() => setTheme('light')}
+                                className={`px-4 py-1.5 rounded text-xs font-bold transition-all ${theme === 'light' ? 'bg-[#00C2FF] text-black shadow-lg' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+                            >
+                                Light
+                            </button>
                         </div>
                     </div>
                     <div className="flex items-center justify-between">
-                        <span className="text-gray-400 text-sm">Color Blind Mode</span>
-                        <button className="w-10 h-6 bg-white/10 rounded-full relative transition-colors hover:bg-white/20">
-                            <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full"></div>
+                        <span className="text-[var(--text-secondary)] text-sm">Color Blind Mode</span>
+                        <button className="w-10 h-6 bg-[var(--element-bg)] rounded-full relative transition-colors hover:bg-[var(--border-main)]">
+                            <div className="absolute left-1 top-1 w-4 h-4 bg-[var(--text-primary)] rounded-full"></div>
                         </button>
                     </div>
                 </div>
             </div>
 
-            <div className="bg-[#1A1D24] border border-white/10 rounded-2xl p-6">
-                <h3 className="text-white font-bold mb-4 flex items-center gap-2">
+            <div className="bg-[var(--bg-surface-2)] border border-[var(--border-main)] rounded-2xl p-6 transition-colors">
+                <h3 className="text-[var(--text-primary)] font-bold mb-4 flex items-center gap-2">
                     <Icons.Mic className="w-5 h-5 text-[#00C2FF]" />
                     Voice Module
                 </h3>
                 <div className="flex items-center justify-between mb-4">
                      <div className="flex flex-col">
-                        <span className="text-gray-300 text-sm font-medium">Always-on Assistant</span>
+                        <span className="text-[var(--text-secondary)] text-sm font-medium">Always-on Assistant</span>
                         <span className="text-gray-500 text-xs">Allows voice commands for navigation and queries.</span>
                      </div>
                      <button 
                         onClick={() => setIsVoiceActive(!isVoiceActive)}
-                        className={`w-12 h-7 rounded-full relative transition-all duration-300 ${isVoiceActive ? 'bg-[#00C2FF]' : 'bg-white/10'}`}
+                        className={`w-12 h-7 rounded-full relative transition-all duration-300 ${isVoiceActive ? 'bg-[#00C2FF]' : 'bg-[var(--element-bg)]'}`}
                     >
                         <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-md transition-all duration-300 ${isVoiceActive ? 'left-6' : 'left-1'}`}></div>
                     </button>
                 </div>
                 {isVoiceActive && (
-                    <div className="bg-[#0F1115] border border-white/5 rounded-xl p-4 flex items-center gap-4 animate-slideIn">
+                    <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl p-4 flex items-center gap-4 animate-slideIn">
                         <div className="h-4 flex items-center gap-0.5">
                             {[...Array(5)].map((_, i) => (
                                 <div key={i} className="w-1 bg-[#00C2FF] rounded-full animate-music" style={{animationDuration: Math.random() * 0.5 + 0.3 + 's', height: '100%'}}></div>
@@ -558,7 +593,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 )}
             </div>
             
-            <div className="pt-4 border-t border-white/5">
+            <div className="pt-4 border-t border-[var(--border-subtle)]">
                 <button className="text-red-400 text-sm font-bold flex items-center gap-2 hover:bg-red-500/10 px-4 py-2 rounded-lg transition-colors w-full justify-center border border-transparent hover:border-red-500/20">
                     <Icons.LogOut className="w-4 h-4" />
                     Reset System Simulation
@@ -569,12 +604,12 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   );
 
   return (
-    <div className="flex h-screen bg-[#050505] text-white font-sans overflow-hidden">
+    <div className="flex h-screen bg-[var(--bg-main)] text-[var(--text-primary)] font-sans overflow-hidden transition-colors duration-300" style={cssVariables}>
         
         {/* --- Sidebar --- */}
-        <aside className="w-20 lg:w-64 bg-[#0F1115] border-r border-white/5 flex flex-col shrink-0 transition-all duration-300 z-50">
+        <aside className="w-20 lg:w-64 bg-[var(--bg-sidebar)] border-r border-[var(--border-subtle)] flex flex-col shrink-0 transition-colors duration-300 z-50">
             {/* Logo Area */}
-            <div className="h-20 flex items-center justify-center lg:justify-start lg:px-6 border-b border-white/5 cursor-pointer" onClick={onBack}>
+            <div className="h-20 flex items-center justify-center lg:justify-start lg:px-6 border-b border-[var(--border-subtle)] cursor-pointer" onClick={onBack}>
                 {/* Replaced Icon with Landing Page SVG */}
                 <div className="w-10 h-10 shrink-0 text-[#00C2FF]">
                      <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
@@ -594,7 +629,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                      </svg>
                 </div>
                 <div className="ml-3 hidden lg:block">
-                    <span className="font-display font-bold text-lg tracking-wider block leading-none">AROGYA</span>
+                    <span className="font-display font-bold text-lg tracking-wider block leading-none text-[var(--text-primary)]">AROGYA</span>
                     <span className="font-display font-bold text-xs tracking-[0.2em] text-[#00C2FF]">SWARM</span>
                 </div>
             </div>
@@ -609,10 +644,10 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             </nav>
 
             {/* Bottom Actions */}
-            <div className="p-4 border-t border-white/5">
+            <div className="p-4 border-t border-[var(--border-subtle)]">
                 <button 
                   onClick={onBack}
-                  className="w-full flex items-center justify-center lg:justify-start gap-3 p-3 text-gray-400 hover:text-white hover:bg-white/5 rounded-xl transition-all group"
+                  className="w-full flex items-center justify-center lg:justify-start gap-3 p-3 text-gray-400 hover:text-[var(--text-primary)] hover:bg-[var(--element-bg)] rounded-xl transition-all group"
                 >
                     <Icons.LogOut className="w-5 h-5 group-hover:text-red-400 transition-colors" />
                     <span className="hidden lg:block text-sm font-medium">Exit Dashboard</span>
@@ -621,13 +656,13 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         </aside>
 
         {/* --- Main Content Area --- */}
-        <main className="flex-1 relative flex flex-col min-w-0 bg-[#050505]">
+        <main className="flex-1 relative flex flex-col min-w-0 bg-[var(--bg-main)] transition-colors duration-300">
             {/* Header */}
-            <header className="h-20 shrink-0 border-b border-white/5 flex items-center justify-between px-8 bg-[#050505]/50 backdrop-blur-md sticky top-0 z-40">
-                <h1 className="text-xl font-display font-bold capitalize text-white flex items-center gap-3">
+            <header className="h-20 shrink-0 border-b border-[var(--border-subtle)] flex items-center justify-between px-8 bg-[var(--header-bg)] backdrop-blur-md sticky top-0 z-40 transition-colors">
+                <h1 className="text-xl font-display font-bold capitalize text-[var(--text-primary)] flex items-center gap-3">
                     {activeTab}
                     {activeTab === 'overview' && (
-                        <span className="text-xs font-sans font-normal text-gray-500 bg-white/5 px-2 py-0.5 rounded border border-white/5">Live Monitor + Simulation</span>
+                        <span className="text-xs font-sans font-normal text-gray-500 bg-[var(--element-bg)] px-2 py-0.5 rounded border border-[var(--border-subtle)]">Live Monitor + Simulation</span>
                     )}
                 </h1>
 
@@ -661,15 +696,15 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                   <div className="absolute inset-0 bg-[#00C2FF] rounded-full blur-xl opacity-20 group-hover:opacity-40 animate-pulse transition-opacity"></div>
                   
                   {/* Button */}
-                  <div className="relative w-14 h-14 bg-[#1A1D24] border border-[#00C2FF]/30 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(0,194,255,0.2)] group-hover:scale-110 transition-transform duration-300">
+                  <div className="relative w-14 h-14 bg-[var(--bg-surface-2)] border border-[#00C2FF]/30 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(0,194,255,0.2)] group-hover:scale-110 transition-transform duration-300">
                      <Icons.Brain className="w-7 h-7 text-[#00C2FF] animate-node-pulse" />
                      
                      {/* Notification Dot */}
-                     <div className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-[#1A1D24]"></div>
+                     <div className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-[var(--bg-surface-2)]"></div>
                   </div>
 
                   {/* Tooltip */}
-                  <div className="absolute right-full mr-4 top-1/2 -translate-y-1/2 bg-[#1A1D24] border border-white/10 px-3 py-1.5 rounded-lg text-xs font-bold text-[#00C2FF] opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                  <div className="absolute right-full mr-4 top-1/2 -translate-y-1/2 bg-[var(--bg-surface-2)] border border-[var(--border-main)] px-3 py-1.5 rounded-lg text-xs font-bold text-[#00C2FF] opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
                      AI Assistant Ready
                   </div>
                </div>
@@ -694,22 +729,13 @@ const SidebarItem: React.FC<{
         className={`w-full flex items-center justify-center lg:justify-start gap-3 p-3 rounded-xl transition-all duration-200 group relative ${
             active 
             ? 'bg-[#00C2FF]/10 text-[#00C2FF]' 
-            : 'text-gray-400 hover:text-white hover:bg-white/5'
+            : 'text-gray-400 hover:text-[var(--text-primary)] hover:bg-[var(--element-bg)]'
         }`}
     >
         {active && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-[#00C2FF] rounded-r-full hidden lg:block"></div>}
         <Icon className={`w-5 h-5 ${active ? 'fill-current opacity-100' : 'opacity-70 group-hover:opacity-100'}`} />
         <span className={`hidden lg:block text-sm font-medium tracking-wide ${active ? 'font-bold' : ''}`}>{label}</span>
     </button>
-);
-
-const StatusItem: React.FC<{ label: string; value: string; color: string }> = ({ label, value, color }) => (
-    <div className="flex flex-col items-end">
-        <span className="text-[9px] uppercase text-gray-500 font-bold tracking-wider mb-0.5">{label}</span>
-        <span className={`font-display font-bold text-sm ${color}`}>
-            {value}
-        </span>
-    </div>
 );
 
 const ScenarioIcon: React.FC<{ type: Scenario; className?: string }> = ({ type, className }) => {
@@ -727,36 +753,37 @@ const ResourcePanel: React.FC<{
   trend: string; 
   details: {label: string, val: string}[];
   status: 'safe' | 'warning' | 'critical'; 
-  icon: any 
-}> = ({ title, mainValue, maxValue, unit, trend, details, status, icon: Icon }) => {
+  icon: any;
+  cssVariables?: React.CSSProperties;
+}> = ({ title, mainValue, maxValue, unit, trend, details, status, icon: Icon, cssVariables }) => {
     const percentage = (mainValue / maxValue) * 100;
     const color = status === 'critical' ? 'bg-red-500' : status === 'warning' ? 'bg-orange-500' : 'bg-[#00C2FF]';
     const textColor = status === 'critical' ? 'text-red-500' : status === 'warning' ? 'text-orange-500' : 'text-[#00C2FF]';
 
     return (
-        <div className="bg-[#0F1115] border border-white/10 rounded-2xl p-5 flex flex-col justify-between group hover:border-white/20 transition-all shadow-lg h-full">
+        <div className="bg-[var(--bg-surface)] border border-[var(--border-main)] rounded-2xl p-5 flex flex-col justify-between group hover:border-[var(--border-main)] transition-all shadow-lg h-full">
             <div className="flex justify-between items-start mb-4">
-                <div className={`p-2.5 rounded-xl bg-white/5 ${textColor}`}>
+                <div className={`p-2.5 rounded-xl bg-[var(--element-bg)] ${textColor}`}>
                     <Icon className="w-5 h-5" />
                 </div>
-                <span className={`text-[10px] font-bold px-2 py-1 rounded bg-white/5 ${textColor}`}>{trend}</span>
+                <span className={`text-[10px] font-bold px-2 py-1 rounded bg-[var(--element-bg)] ${textColor}`}>{trend}</span>
             </div>
             
             <div className="mb-4">
-                <div className="text-gray-400 text-xs uppercase tracking-wider font-bold mb-1">{title}</div>
-                <div className="text-3xl font-display font-bold text-white mb-2">
+                <div className="text-[var(--text-secondary)] text-xs uppercase tracking-wider font-bold mb-1">{title}</div>
+                <div className="text-3xl font-display font-bold text-[var(--text-primary)] mb-2">
                     {mainValue} <span className="text-sm text-gray-500 font-normal">/ {maxValue} {unit}</span>
                 </div>
-                <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                <div className="w-full h-1.5 bg-[var(--element-bg)] rounded-full overflow-hidden">
                     <div className={`h-full rounded-full transition-all duration-1000 ${color}`} style={{ width: `${percentage}%` }}></div>
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 pt-4 border-t border-white/5">
+            <div className="grid grid-cols-2 gap-2 pt-4 border-t border-[var(--border-subtle)]">
                {details.map((d, i) => (
                   <div key={i}>
                      <div className="text-[10px] text-gray-500 uppercase">{d.label}</div>
-                     <div className="text-xs font-bold text-white">{d.val}</div>
+                     <div className="text-xs font-bold text-[var(--text-primary)]">{d.val}</div>
                   </div>
                ))}
             </div>
