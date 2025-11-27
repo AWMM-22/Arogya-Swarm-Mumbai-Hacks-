@@ -606,7 +606,7 @@ const DashboardSection = () => {
                                   <div className="bg-[#0F1115] border border-white/5 p-3 rounded-lg opacity-40"><div className="font-bold mb-1 flex items-center gap-1"><Icons.ShieldCheck size={10}/> Normal</div><div className="text-[8px]">Baseline operations.</div></div>
                                   <div className="bg-[#00C2FF]/10 border border-[#00C2FF] p-3 rounded-lg relative shadow-[0_0_10px_rgba(0,194,255,0.1)]">
                                       <div className="font-bold text-[#00C2FF] mb-1 flex items-center gap-1"><Icons.Moon size={10}/> Pollution</div>
-                                      <div className="text-[8px] text-gray-400">AQI > 400. High respiratory load.</div>
+                                      <div className="text-[8px] text-gray-400">AQI &gt; 400. High respiratory load.</div>
                                       <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-[#00C2FF]"></div>
                                   </div>
                                   <div className="bg-[#0F1115] border border-white/5 p-3 rounded-lg opacity-40"><div className="font-bold mb-1 flex items-center gap-1"><Icons.Users size={10}/> Festival</div><div className="text-[8px]">Crowd surge.</div></div>

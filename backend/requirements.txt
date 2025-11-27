@@ -1,0 +1,49 @@
+# --- Core Framework ---
+fastapi~=0.115.0
+uvicorn[standard]~=0.32.0
+pydantic~=2.10.0
+pydantic-settings~=2.5.0
+
+# --- The "Modern" LangChain Stack ---
+# We use >= to allow pip to find versions that talk to each other
+# but we cap major versions to prevent breaking changes.
+langchain>=0.3.0,<0.4.0
+langgraph>=0.2.0,<0.3.0
+langchain-google-genai>=2.0.0,<3.0.0
+langchain-community>=0.3.0,<0.4.0
+google-generativeai>=0.8.0
+
+# --- Database ---
+sqlalchemy~=2.0.30
+psycopg2-binary~=2.9.9
+alembic~=1.17.0
+
+# --- Redis ---
+redis~=5.2.0
+hiredis~=2.3.0
+
+# --- External APIs ---
+requests~=2.32.0
+httpx~=0.28.0
+twilio~=9.3.0
+python-dotenv~=1.0.0
+
+# --- Time-Series Forecasting (CRITICAL SECTION) ---
+prophet~=1.2.0
+pandas~=2.2.0
+# THIS IS THE KEY: Prophet works with modern LangChain 
+# ONLY IF we pin NumPy to the 1.x series.
+numpy>=1.26.4,<2.0.0
+
+# --- WebSocket ---
+python-socketio~=5.12.0
+websockets~=15.0.0
+
+# --- Testing ---
+pytest~=8.3.0
+pytest-asyncio~=0.24.0
+
+# --- Utilities ---
+python-multipart~=0.0.9
+PyJWT~=2.9.0
+passlib[bcrypt]~=1.7.0
