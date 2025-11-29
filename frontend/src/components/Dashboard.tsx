@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LineChart, Line } from 'recharts';
 import { Icons } from './ui/Icons';
+import { useRealtimeUpdates } from '../hooks/useRealtimeUpdates';
+import { useAgentState } from '../hooks/useAgentState';
+import { fetchLatestPrediction, triggerCrisisSimulation, fetchCurrentAQI, fetchBeds, fetchStaff, fetchInventory } from '../lib/api';
 
 // --- Types ---
 type Scenario = 'Normal' | 'Pollution' | 'Festival' | 'Outbreak';
@@ -32,39 +35,162 @@ interface Recommendation {
 }
 
 // --- Mock Data Generators ---
-const generateChartData = (scenario: Scenario) => {
+const generateChartData = (scenario: Scenario, predictionData?: any, resources?: any) => {
+  // Use real prediction data if available
+  if (predictionData && predictionData.predicted_surge) {
+    const surgeValue = predictionData.predicted_surge;
+    const capacity = resources?.beds?.total || 200;
+    
+    // Generate 48-hour forecast based on prediction
+    return Array.from({ length: 48 }, (_, i) => {
+      const time = `${i % 24}:00`;
+      const hourOffset = (i - 24) / 24; // -1 to +1 range
+      const surgeTrend = surgeValue * (1 + Math.sin(hourOffset * Math.PI) * 0.3);
+      return { 
+        time, 
+        surge: Math.floor(Math.max(10, Math.min(100, surgeTrend))), 
+        capacity: Math.floor(capacity * 0.8)
+      };
+    });
+  }
+  
+  // Fallback to synthetic data
   const base = scenario === 'Normal' ? 40 : scenario === 'Pollution' ? 65 : scenario === 'Festival' ? 85 : 95;
   const volatility = scenario === 'Normal' ? 10 : 25;
+  const capacity = resources?.beds?.total || 200;
   
   return Array.from({ length: 48 }, (_, i) => {
     const time = `${i % 24}:00`;
     const surge = Math.min(100, Math.max(10, base + Math.sin(i / 8) * volatility + (Math.random() * 10 - 5)));
-    const capacity = 80; // Fixed hospital capacity line
-    return { time, surge: Math.floor(surge), capacity };
+    return { time, surge: Math.floor(surge), capacity: Math.floor(capacity * 0.8) };
   });
 };
 
-const SCENARIO_CONFIG: Record<Scenario, { aqi: number; risk: RiskLevel; weather: string; beds: {free: number, total: number}; oxygen: number; staff: {active: number, idle: number}; ppe: number }> = {
-  Normal: { aqi: 45, risk: 'Low', weather: 'Clear Sky', beds: {free: 85, total: 200}, oxygen: 98, staff: {active: 45, idle: 12}, ppe: 1200 },
-  Pollution: { aqi: 412, risk: 'High', weather: 'Haze / Smog', beds: {free: 25, total: 200}, oxygen: 34, staff: {active: 58, idle: 2}, ppe: 950 },
-  Festival: { aqi: 180, risk: 'Medium', weather: 'Clear Sky', beds: {free: 40, total: 200}, oxygen: 85, staff: {active: 55, idle: 5}, ppe: 1050 },
-  Outbreak: { aqi: 90, risk: 'Critical', weather: 'Rainy', beds: {free: 5, total: 200}, oxygen: 60, staff: {active: 68, idle: 0}, ppe: 200 },
+const SCENARIO_CONFIG: Record<Scenario, { aqi: number; risk: RiskLevel; weather: string; beds: {free: number, total: number}; oxygen: number; staff: {active: number, idle: number, doctors?: number, nurses?: number, total?: number}; ppe: number }> = {
+  Normal: { aqi: 45, risk: 'Low', weather: 'Clear Sky', beds: {free: 85, total: 200}, oxygen: 98, staff: {active: 45, idle: 12, doctors: 32, nurses: 45, total: 77}, ppe: 1200 },
+  Pollution: { aqi: 412, risk: 'High', weather: 'Haze / Smog', beds: {free: 25, total: 200}, oxygen: 34, staff: {active: 58, idle: 2, doctors: 38, nurses: 52, total: 90}, ppe: 950 },
+  Festival: { aqi: 180, risk: 'Medium', weather: 'Clear Sky', beds: {free: 40, total: 200}, oxygen: 85, staff: {active: 55, idle: 5, doctors: 35, nurses: 48, total: 83}, ppe: 1050 },
+  Outbreak: { aqi: 90, risk: 'Critical', weather: 'Rainy', beds: {free: 5, total: 200}, oxygen: 60, staff: {active: 68, idle: 0, doctors: 42, nurses: 60, total: 102}, ppe: 200 },
 };
 
 const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [activeScenario, setActiveScenario] = useState<Scenario>('Normal');
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [logs, setLogs] = useState<Log[]>([]);
+  const [logs, setLogs] = useState<Log[]>([
+    {
+      id: 1,
+      agent: 'Orchestrator',
+      message: 'System initialized. Monitoring all departments.',
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      isImportant: false
+    }
+  ]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [isVoiceActive, setIsVoiceActive] = useState(false);
   const [isFeedPaused, setIsFeedPaused] = useState(false);
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [theme, setTheme] = useState<'dark' | 'light'>('light');
+  const [realtimeAQI, setRealtimeAQI] = useState<number | null>(null);
+  const [realtimeWeather, setRealtimeWeather] = useState<string | null>(null);
+  const [realtimeResources, setRealtimeResources] = useState<any>(null);
+  const [ambulanceData, setAmbulanceData] = useState<any>(null);
+  const [latestPrediction, setLatestPrediction] = useState<any>(null);
   const logsContainerRef = useRef<HTMLDivElement>(null);
 
-  const stats = SCENARIO_CONFIG[activeScenario];
-  const chartData = generateChartData(activeScenario);
+  // Real-time data integration
+  const { isConnected, latestUpdate } = useRealtimeUpdates();
+  const { agentState, recommendations: apiRecommendations, surgePrediction } = useAgentState(latestUpdate);
+
+  // Use real-time data when available, fallback to scenario config
+  const statsBase = SCENARIO_CONFIG[activeScenario];
+  
+  // Calculate current AQI
+  const currentAQI = activeScenario === 'Normal' && realtimeAQI !== null ? realtimeAQI : statsBase.aqi;
+  
+  // Calculate risk level based on AQI for Normal scenario
+  const getRiskLevel = (aqi: number, scenario: Scenario): RiskLevel => {
+    if (scenario !== 'Normal') return statsBase.risk;
+    if (aqi >= 300) return 'Critical';
+    if (aqi >= 200) return 'High';
+    if (aqi >= 100) return 'Medium';
+    return 'Low';
+  };
+  
+  const stats = {
+    ...statsBase,
+    aqi: currentAQI,
+    weather: activeScenario === 'Normal' && realtimeWeather ? realtimeWeather : statsBase.weather,
+    risk: activeScenario === 'Normal' ? getRiskLevel(currentAQI, activeScenario) : statsBase.risk,
+    beds: realtimeResources?.beds ? {
+      free: Object.values(realtimeResources.beds as Record<string, {available: number}>).reduce((sum: number, dept: any) => sum + (dept.available || 0), 0),
+      total: Object.values(realtimeResources.beds as Record<string, {total: number}>).reduce((sum: number, dept: any) => sum + (dept.total || 0), 0)
+    } : statsBase.beds,
+    staff: realtimeResources?.staff ? (() => {
+      const doctors = realtimeResources.staff.doctors !== undefined ? realtimeResources.staff.doctors : (statsBase.staff.doctors || 0);
+      const nurses = realtimeResources.staff.nurses !== undefined ? realtimeResources.staff.nurses : (statsBase.staff.nurses || 0);
+      const doctorsAvailable = realtimeResources.staff.doctors_available !== undefined ? realtimeResources.staff.doctors_available : 0;
+      const nursesAvailable = realtimeResources.staff.nurses_available !== undefined ? realtimeResources.staff.nurses_available : 0;
+      
+      const totalMedicalStaff = doctors + nurses;
+      const totalAvailable = doctorsAvailable + nursesAvailable;
+      const onDuty = totalMedicalStaff - totalAvailable;
+      
+      return {
+        active: onDuty,
+        idle: totalAvailable,
+        doctors: doctors,
+        nurses: nurses,
+        total: totalMedicalStaff
+      };
+    })() : statsBase.staff,
+    oxygen: realtimeResources?.inventory?.items ? 
+      (realtimeResources.inventory.items.find((item: any) => item.name?.toLowerCase().includes('oxygen'))?.quantity ?? statsBase.oxygen) 
+      : statsBase.oxygen,
+    ppe: realtimeResources?.inventory?.items ? 
+      (realtimeResources.inventory.items.find((item: any) => item.name?.toLowerCase().includes('ppe'))?.quantity ?? statsBase.ppe) 
+      : statsBase.ppe
+  };
+  
+  // Calculate medicine stock percentage
+  const medicineStockPercentage = realtimeResources?.inventory?.items ? 
+    (() => {
+      const medicines = realtimeResources.inventory.items.filter((item: any) => 
+        item.name && !item.name.toLowerCase().includes('oxygen') && !item.name.toLowerCase().includes('ppe')
+      );
+      if (medicines.length === 0) return 98;
+      const totalStock = medicines.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0);
+      const avgStock = totalStock / medicines.length;
+      return Math.min(100, Math.floor(avgStock));
+    })()
+    : 98;
+  
+  // Calculate bed type breakdown
+  const bedDetails = realtimeResources?.beds ? 
+    (() => {
+      const departments = Object.entries(realtimeResources.beds as Record<string, {available: number, total: number}>);
+      const icuDepts = departments.filter(([name]) => name.toLowerCase().includes('icu') || name.toLowerCase().includes('critical'));
+      const generalDepts = departments.filter(([name]) => !name.toLowerCase().includes('icu') && !name.toLowerCase().includes('critical'));
+      
+      const icuAvailable = icuDepts.reduce((sum, [_, dept]) => sum + (dept.available || 0), 0);
+      const icuTotal = icuDepts.reduce((sum, [_, dept]) => sum + (dept.total || 0), 0);
+      const generalAvailable = generalDepts.reduce((sum, [_, dept]) => sum + (dept.available || 0), 0);
+      const generalTotal = generalDepts.reduce((sum, [_, dept]) => sum + (dept.total || 0), 0);
+      
+      const icuStatus = icuTotal > 0 ? (icuAvailable / icuTotal < 0.2 ? 'Critical' : icuAvailable / icuTotal < 0.5 ? 'Low' : 'Available') : 'N/A';
+      const generalStatus = generalTotal > 0 ? (generalAvailable / generalTotal < 0.2 ? 'Critical' : generalAvailable / generalTotal < 0.5 ? 'Low' : 'Available') : 'N/A';
+      
+      return [
+        { label: 'ICU', val: icuStatus },
+        { label: 'General', val: generalStatus }
+      ];
+    })()
+    : [
+      { label: 'ICU', val: 'Critical' },
+      { label: 'General', val: 'Available' }
+    ];
+  
+  const chartData = generateChartData(activeScenario, latestPrediction, realtimeResources);
 
   // --- Dynamic CSS Variables based on Theme ---
   const cssVariables = {
@@ -92,42 +218,296 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     return () => clearInterval(timer);
   }, []);
 
-  // --- Log Simulator ---
+  // --- Fetch real-time AQI from WebSocket and fallback API ---
   useEffect(() => {
-    if (isFeedPaused) return;
-
-    const interval = setInterval(() => {
-      const agents = ['Sentinel', 'Orchestrator', 'Logistics', 'Action'] as const;
-      const agent = agents[Math.floor(Math.random() * agents.length)];
-      
-      let msg = "";
-      let important = false;
-      if (agent === 'Sentinel') msg = `AQI signal stable at ${stats.aqi + Math.floor(Math.random() * 10)}.`;
-      if (agent === 'Orchestrator') msg = `Analyzing inflow patterns for ${activeScenario} protocols.`;
-      if (agent === 'Logistics') msg = `Bed capacity check: ${stats.beds.free} beds available.`;
-      if (agent === 'Action') msg = `Routine check active. No critical anomalies.`;
-
-      if (activeScenario !== 'Normal') {
-         important = Math.random() > 0.7;
-         if (agent === 'Sentinel') { msg = `CRITICAL: Detected rapid spike in respiratory cases in Ward B.`; important = true; }
-         if (agent === 'Logistics') { msg = `WARNING: Oxygen pressure dropping in ICU 2.`; important = true; }
-         if (agent === 'Action') { msg = `Drafting emergency staff reallocation order #9921.`; important = true; }
-         if (agent === 'Orchestrator') msg = `Re-calibrating surge prediction model. Confidence: 98%.`;
+    const loadAQI = async () => {
+      if (activeScenario === 'Normal') {
+        try {
+          const data = await fetchCurrentAQI();
+          setRealtimeAQI(data.aqi);
+        } catch (err) {
+          console.error('Failed to load real-time AQI:', err);
+        }
       }
-
-      const newLog: Log = {
-        id: Date.now(),
-        agent,
-        message: msg,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-        isImportant: important
-      };
-
-      setLogs(prev => [...prev.slice(-49), newLog]); // Keep last 50
-    }, 2000);
-
+    };
+    // Initial load
+    loadAQI();
+    // Fallback polling every 5 minutes (WebSocket provides updates every 30 seconds)
+    const interval = setInterval(loadAQI, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [activeScenario, stats, isFeedPaused]);
+  }, [activeScenario]);
+
+  // Fetch real-time weather
+  useEffect(() => {
+    const loadWeather = async () => {
+      if (activeScenario === 'Normal') {
+        try {
+          // Get user location for weather
+          const getLocation = (): Promise<{lat: number, lon: number} | null> => {
+            return new Promise((resolve) => {
+              if (!navigator.geolocation) {
+                resolve(null);
+                return;
+              }
+              navigator.geolocation.getCurrentPosition(
+                (position) => resolve({lat: position.coords.latitude, lon: position.coords.longitude}),
+                () => resolve(null),
+                {timeout: 5000, maximumAge: 300000}
+              );
+            });
+          };
+          
+          const location = await getLocation();
+          let url = 'http://localhost:8000/api/v1/environment/weather';
+          if (location) {
+            url += `?lat=${location.lat}&lon=${location.lon}`;
+          }
+          
+          const response = await fetch(url);
+          const data = await response.json();
+          setRealtimeWeather(data.description);
+        } catch (err) {
+          console.error('Failed to load real-time weather:', err);
+        }
+      }
+    };
+    loadWeather();
+    const interval = setInterval(loadWeather, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [activeScenario]);
+
+  // --- Real-time AQI updates from WebSocket ---
+  useEffect(() => {
+    if (latestUpdate?.type === 'aqi_update' && activeScenario === 'Normal') {
+      const aqiValue = typeof latestUpdate.aqi === 'object' ? latestUpdate.aqi.aqi : latestUpdate.aqi;
+      setRealtimeAQI(aqiValue);
+      console.log('Real-time AQI update:', aqiValue, 'Full data:', latestUpdate);
+    }
+  }, [latestUpdate, activeScenario]);
+
+  // --- Fetch real-time resources data ---
+  useEffect(() => {
+    const loadResources = async () => {
+      try {
+        const [bedsData, staffData, inventoryData] = await Promise.all([
+          fetchBeds(),
+          fetchStaff(),
+          fetchInventory(false)
+        ]);
+        console.log('Real-time resources loaded:', { bedsData, staffData, inventoryData });
+        setRealtimeResources({
+          beds: bedsData,
+          staff: staffData,
+          inventory: inventoryData
+        });
+      } catch (err) {
+        console.error('Failed to load real-time resources:', err);
+      }
+    };
+    loadResources();
+    const interval = setInterval(loadResources, 10000); // Update every 10 seconds
+    return () => clearInterval(interval);
+  }, []);
+
+  // --- Fetch latest prediction data ---
+  useEffect(() => {
+    const loadPrediction = async () => {
+      try {
+        const predictionData = await fetchLatestPrediction();
+        console.log('Latest prediction loaded:', predictionData);
+        setLatestPrediction(predictionData);
+      } catch (err) {
+        console.error('Failed to load prediction:', err);
+      }
+    };
+    loadPrediction();
+    const interval = setInterval(loadPrediction, 30000); // Update every 30 seconds
+    return () => clearInterval(interval);
+  }, []);
+
+  // --- Log Simulator --- DISABLED to show real agent data
+  // useEffect(() => {
+  //   if (isFeedPaused) return;
+
+  //   const interval = setInterval(() => {
+  //     const agents = ['Sentinel', 'Orchestrator', 'Logistics', 'Action'] as const;
+  //     const agent = agents[Math.floor(Math.random() * agents.length)];
+      
+  //     let msg = "";
+  //     let important = false;
+  //     if (agent === 'Sentinel') msg = `AQI signal stable at ${stats.aqi + Math.floor(Math.random() * 10)}.`;
+  //     if (agent === 'Orchestrator') msg = `Analyzing inflow patterns for ${activeScenario} protocols.`;
+  //     if (agent === 'Logistics') msg = `Bed capacity check: ${stats.beds.free} beds available.`;
+  //     if (agent === 'Action') msg = `Routine check active. No critical anomalies.`;
+
+  //     if (activeScenario !== 'Normal') {
+  //        important = Math.random() > 0.7;
+  //        if (agent === 'Sentinel') { msg = `CRITICAL: Detected rapid spike in respiratory cases in Ward B.`; important = true; }
+  //        if (agent === 'Logistics') { msg = `WARNING: Oxygen pressure dropping in ICU 2.`; important = true; }
+  //        if (agent === 'Action') { msg = `Drafting emergency staff reallocation order #9921.`; important = true; }
+  //        if (agent === 'Orchestrator') msg = `Re-calibrating surge prediction model. Confidence: 98%.`;
+  //     }
+
+  //     const newLog: Log = {
+  //       id: Date.now(),
+  //       agent,
+  //       message: msg,
+  //       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+  //       isImportant: important
+  //     };
+
+  //     setLogs(prev => [...prev.slice(-49), newLog]); // Keep last 50
+  //   }, 2000);
+
+  //   return () => clearInterval(interval);
+  // }, [activeScenario, stats, isFeedPaused]);
+
+  // --- Load Test Agent Reasoning on Mount and Periodically ---
+  useEffect(() => {
+    const loadTestReasoning = async () => {
+      try {
+        const response = await fetch('http://localhost:8000/api/v1/agents/test-reasoning');
+        const data = await response.json();
+        
+        console.log('Test reasoning response:', data); // Debug log
+        
+        if (data.reasoning_chain && data.reasoning_chain.length > 0) {
+          const chainLogs: Log[] = data.reasoning_chain.map((step: any, idx: number) => {
+            // Ensure agent type matches our union type
+            const agentType = (step.agent as 'Sentinel' | 'Orchestrator' | 'Logistics' | 'Action') || 'Orchestrator';
+            
+            return {
+              id: Date.now() + idx + Math.random() * 1000,
+              agent: agentType,
+              message: step.thought || step.observation || step.message || 'Processing...',
+              time: step.timestamp ? new Date(step.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+              isImportant: step.level === 'warning' || step.level === 'critical' || step.type === 'critical'
+            };
+          });
+          
+          console.log('Setting logs from test reasoning:', chainLogs); // Debug log
+          // Prepend new logs to existing ones
+          setLogs(prev => [...chainLogs, ...prev].slice(0, 50));
+        }
+        
+        // Load recommendations from test-reasoning endpoint
+        if (data.recommendations && data.recommendations.length > 0) {
+          const testRecs: Recommendation[] = data.recommendations.map((rec: any, idx: number) => ({
+            id: Date.now() + idx + 1000,
+            agent: rec.department === 'respiratory' ? 'Action' : rec.department === 'icu' ? 'Orchestrator' : 'Logistics',
+            action: rec.action || 'Recommendation pending',
+            reason: rec.priority === 'high' ? 'High priority action required to prevent surge impact' : 'Optimization recommendation based on predictive analysis',
+            impact: rec.estimated_cost ? `Estimated cost: ₹${(rec.estimated_cost / 1000).toFixed(1)}K` : 'Improved patient outcomes and resource efficiency'
+          }));
+          
+          console.log('Setting recommendations from test reasoning:', testRecs);
+          // Prepend test recommendations to existing ones
+          setRecommendations(prev => {
+            // Remove duplicates and keep only latest test recommendations
+            const filtered = prev.filter(r => r.id < 1000);
+            return [...testRecs, ...filtered].slice(0, 10);
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load test reasoning:', err);
+      }
+    };
+    
+    // Load immediately
+    loadTestReasoning();
+    
+    // Refresh every 30 seconds to show updated test data
+    const interval = setInterval(loadTestReasoning, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // --- Integrate Real Agent Messages ---
+  useEffect(() => {
+    if (agentState?.messages && agentState.messages.length > 0) {
+      const realLogs: Log[] = agentState.messages.map((msg: any) => {
+        let agentType: 'Sentinel' | 'Orchestrator' | 'Logistics' | 'Action' = 'Orchestrator';
+        if (msg.agent === 'sentinel') agentType = 'Sentinel';
+        else if (msg.agent === 'logistics') agentType = 'Logistics';
+        else if (msg.agent === 'action') agentType = 'Action';
+        
+        return {
+          id: Date.now() + Math.random(),
+          agent: agentType,
+          message: msg.message,
+          time: new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          isImportant: msg.confidence && msg.confidence > 85
+        };
+      });
+      
+      // Append to existing logs instead of replacing
+      setLogs(prev => [...prev, ...realLogs].slice(-50));
+    }
+  }, [agentState?.messages]);
+
+  // Add reasoning chain from WebSocket (agent_update type)
+  useEffect(() => {
+    if (latestUpdate?.type === 'agent_update') {
+      console.log('Agent update received:', latestUpdate);
+      
+      // Extract reasoning chain (thought-chain) from agent update
+      const reasoningChain = latestUpdate.reasoning_chain || [];
+      
+      if (reasoningChain.length > 0) {
+        const chainLogs: Log[] = reasoningChain.map((step: any, idx: number) => {
+          // Ensure agent type matches our union type
+          const agentType = (step.agent as 'Sentinel' | 'Orchestrator' | 'Logistics' | 'Action') || 'Orchestrator';
+          
+          return {
+            id: Date.now() + idx + Math.random() * 1000,
+            agent: agentType,
+            message: step.thought || step.observation || step.message || 'Processing...',
+            time: step.timestamp ? new Date(step.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            isImportant: step.level === 'warning' || step.level === 'critical' || step.type === 'critical' || step.priority === 'high'
+          };
+        });
+        
+        console.log('Setting reasoning chain logs:', chainLogs);
+        // Prepend new logs to existing ones
+        setLogs(prev => [...chainLogs, ...prev].slice(0, 50));
+      }
+    }
+  }, [latestUpdate]);
+
+  // --- Generate Alerts from Agent Logs ---
+  useEffect(() => {
+    // Extract critical/important messages from logs as alerts
+    const criticalLogs = logs.filter(log => log.isImportant);
+    
+    if (criticalLogs.length > 0) {
+      const agentAlerts: Alert[] = criticalLogs.slice(0, 10).map((log, idx) => ({
+        id: Date.now() + idx,
+        title: `${log.agent} Agent Alert`,
+        desc: log.message,
+        type: log.message.toLowerCase().includes('critical') ? 'critical' : 'warning',
+        timestamp: log.time
+      }));
+      
+      // Merge with existing scenario alerts
+      setAlerts(prev => {
+        const scenarioAlerts = prev.filter(alert => alert.id < 100); // Keep scenario alerts (low IDs)
+        return [...scenarioAlerts, ...agentAlerts];
+      });
+    }
+  }, [logs]);
+
+  // --- Integrate Real Recommendations ---
+  useEffect(() => {
+    if (apiRecommendations && apiRecommendations.length > 0) {
+      const formattedRecs: Recommendation[] = apiRecommendations.slice(0, 5).map((rec: any, idx: number) => ({
+        id: idx + 1,
+        agent: rec.created_by_agent || 'System',
+        action: rec.title || 'Recommendation',
+        reason: rec.reasoning || '',
+        impact: rec.expected_impact || ''
+      }));
+      setRecommendations(formattedRecs);
+    }
+  }, [apiRecommendations]);
 
   // Auto-scroll logs
   useEffect(() => {
@@ -141,34 +521,38 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   // --- Scenario Effects ---
   useEffect(() => {
+    // Trigger backend simulation when scenario changes
+    const triggerScenario = async () => {
+      try {
+        let crisisType = 'normal';
+        if (activeScenario === 'Pollution') crisisType = 'air_pollution';
+        else if (activeScenario === 'Festival') crisisType = 'mass_gathering';
+        else if (activeScenario === 'Outbreak') crisisType = 'disease_outbreak';
+        
+        await triggerCrisisSimulation(crisisType);
+      } catch (error) {
+        console.error('Failed to trigger crisis simulation:', error);
+      }
+    };
+    
+    triggerScenario();
+    
+    // Set default mock data (will be overridden by real data when available)
     if (activeScenario === 'Pollution') {
-        setRecommendations([
-            { id: 1, agent: 'Orchestrator', action: 'Activate Code Grey', reason: 'AQI > 400 linked to 200% Asthma surge.', impact: 'Mobilize 15 Pulmonologists' },
-            { id: 2, agent: 'Logistics', action: 'Auto-Order Oxygen', reason: 'Reserves projected to deplete in 8hrs.', impact: '+50 Cylinders' },
-        ]);
         setAlerts([
             { id: 1, title: 'Severe Smog Alert', desc: 'Prepare for respiratory surge', type: 'critical', timestamp: 'Now' }
         ]);
     } else if (activeScenario === 'Festival') {
-        setRecommendations([
-            { id: 1, agent: 'Orchestrator', action: 'Clear Trauma Bay', reason: 'High crowd density event nearby.', impact: '+10 Emergency Beds' }
-        ]);
         setAlerts([
-            { id: 1, title: 'Crowd Surge Warning', desc: 'Local density > 5/sqm', type: 'warning', timestamp: 'Now' }
+            { id: 2, title: 'Crowd Surge Warning', desc: 'Local density > 5/sqm', type: 'warning', timestamp: 'Now' }
         ]);
     } else if (activeScenario === 'Outbreak') {
-         setRecommendations([
-            { id: 1, agent: 'Sentinel', action: 'Isolation Protocol', reason: 'Viral vector identified in triage.', impact: 'Lockdown Wing C' },
-            { id: 2, agent: 'Action', action: 'Alert CDC/Local Auth', reason: 'Reportable threshold exceeded.', impact: 'Compliance' }
-        ]);
          setAlerts([
-            { id: 1, title: 'Bio-Hazard Detected', desc: 'Isolate Sector 4 immediately', type: 'critical', timestamp: 'Now' }
+            { id: 3, title: 'Bio-Hazard Detected', desc: 'Isolate Sector 4 immediately', type: 'critical', timestamp: 'Now' }
         ]);
     } else {
-        setRecommendations([
-            { id: 1, agent: 'Logistics', action: 'Staff Rotation', reason: 'Optimize shift handover.', impact: 'Reduce fatigue' }
-        ]);
-        setAlerts([]);
+        // Keep agent alerts even in Normal mode
+        setAlerts(prev => prev.filter(alert => alert.id >= 100));
     }
   }, [activeScenario]);
 
@@ -181,14 +565,23 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
              <div className="flex flex-col">
                 <span className="text-xs uppercase text-gray-500 font-bold tracking-wider mb-1">Surge Risk</span>
-                <span className={`font-display font-bold text-2xl ${stats.risk === 'Critical' ? 'text-red-500 animate-pulse' : stats.risk === 'High' ? 'text-orange-500' : 'text-green-500'}`}>
+                <span className={`font-display font-bold text-2xl ${
+                    stats.risk === 'Critical' ? 'text-red-500 animate-pulse' : 
+                    stats.risk === 'High' ? 'text-orange-500' : 
+                    stats.risk === 'Medium' ? 'text-yellow-500' : 
+                    'text-green-500'
+                }`}>
                     {stats.risk}
                 </span>
              </div>
-             <div className="flex flex-col relative overflow-hidden rounded">
-                <div className="absolute inset-0 opacity-10 bg-[#00C2FF] animate-pulse"></div>
-                <span className="text-xs uppercase text-gray-500 font-bold tracking-wider mb-1 relative z-10">Live AQI</span>
-                <span className={`font-display font-bold text-2xl relative z-10 ${stats.aqi > 200 ? 'text-red-500' : 'text-[#00C2FF]'}`}>
+             <div className="flex flex-col">
+                <span className="text-xs uppercase text-gray-500 font-bold tracking-wider mb-1">Live AQI</span>
+                <span className={`font-display font-bold text-2xl ${
+                    stats.aqi >= 300 ? 'text-red-500 animate-pulse' : 
+                    stats.aqi >= 200 ? 'text-orange-500' : 
+                    stats.aqi >= 100 ? 'text-yellow-500' : 
+                    'text-green-500'
+                }`}>
                     {stats.aqi}
                 </span>
              </div>
@@ -264,7 +657,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               >
                   <div className="absolute left-[19px] top-0 bottom-0 w-px bg-[var(--border-subtle)] h-full"></div>
                   {logs.map((log) => (
-                      <div key={log.id} className={`flex gap-3 animate-slideIn opacity-0 relative z-10 ${log.isImportant ? 'bg-red-500/5 -mx-2 px-2 py-2 rounded border-l-2 border-red-500' : ''}`} style={{animation: 'slideInRight 0.3s forwards'}}>
+                      <div key={log.id} className={`flex gap-3 relative z-10 ${log.isImportant ? 'bg-red-500/5 -mx-2 px-2 py-2 rounded border-l-2 border-red-500' : ''}`}>
                           <div className="flex flex-col items-center shrink-0 w-4">
                               <div className={`w-2 h-2 rounded-full mt-1.5 shadow-[0_0_8px_currentColor] ${
                                   log.agent === 'Sentinel' ? 'bg-blue-400 text-blue-400' : 
@@ -281,9 +674,9 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                   }`}>
                                       {log.agent}
                                   </span>
-                                  <span className="text-gray-600 text-[9px]">{log.time}</span>
+                                  <span className="text-[var(--text-muted)] text-[9px]">{log.time}</span>
                               </div>
-                              <p className={`leading-relaxed ${log.isImportant ? 'text-red-400' : 'text-[var(--text-secondary)]'}`}>{log.message}</p>
+                              <p className={`leading-relaxed text-xs ${log.isImportant ? 'text-red-400' : 'text-[var(--text-secondary)]'}`}>{log.message}</p>
                           </div>
                       </div>
                   ))}
@@ -298,14 +691,14 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                        <h2 className="text-2xl font-display font-bold text-[var(--text-primary)] flex items-center gap-3">
                           48-Hour Forecast
                           <span className="px-2 py-1 rounded text-[10px] font-mono bg-[#00C2FF]/10 text-[#00C2FF] border border-[#00C2FF]/20 flex items-center gap-1">
-                             <Icons.Brain className="w-3 h-3" /> 94% CONFIDENCE
+                             <Icons.Brain className="w-3 h-3" /> {latestPrediction?.confidence_score ? `${Math.floor(latestPrediction.confidence_score)}%` : '75%'} CONFIDENCE
                           </span>
                        </h2>
                    </div>
                    <div className="text-right">
                       <div className="text-xs text-[var(--text-secondary)] mb-1">Projected Peak</div>
                       <div className="text-xl font-bold text-[var(--text-primary)]">
-                         {activeScenario === 'Normal' ? '14:00' : '02:00'} <span className="text-sm text-gray-500">Tomorrow</span>
+                         {latestPrediction?.peak_time ? new Date(latestPrediction.peak_time).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : (activeScenario === 'Normal' ? '14:00' : '02:00')} <span className="text-sm text-gray-500">{latestPrediction?.peak_time ? '' : 'Tomorrow'}</span>
                       </div>
                    </div>
                </div>
@@ -362,24 +755,21 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                mainValue={stats.beds.free}
                maxValue={stats.beds.total}
                unit="Free"
-               trend="↑ 12 admissions (2h)"
-               details={[
-                  { label: "ICU", val: "Critical" },
-                  { label: "General", val: "Available" }
-               ]}
+               trend={`${stats.beds.total - stats.beds.free} occupied`}
+               details={bedDetails}
                status={stats.beds.free < 20 ? 'critical' : stats.beds.free < 50 ? 'warning' : 'safe'}
                icon={Icons.LayoutDashboard}
                cssVariables={cssVariables}
             />
             <ResourcePanel 
                title="Medical Staff"
-               mainValue={stats.staff.active}
-               maxValue={100}
-               unit="Active"
-               trend={`${stats.staff.idle} Idle currently`}
+               mainValue={stats.staff.idle}
+               maxValue={stats.staff.total || (stats.staff.doctors + stats.staff.nurses)}
+               unit="Available"
+               trend={`${stats.staff.active} On Duty`}
                details={[
-                  { label: "Doctors", val: "32 On-site" },
-                  { label: "Nurses", val: "Shortage (-4)" }
+                  { label: "Doctors", val: `${stats.staff.doctors || 0} On-site` },
+                  { label: "Nurses", val: `${stats.staff.nurses || 0} On-site` }
                ]}
                status={stats.staff.idle < 2 ? 'warning' : 'safe'}
                icon={Icons.Users}
@@ -393,7 +783,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                trend={activeScenario === 'Pollution' ? "Reorder Triggered" : "Stable Stock"}
                details={[
                   { label: "PPE Units", val: stats.ppe.toString() },
-                  { label: "Meds", val: "98% Stock" }
+                  { label: "Meds", val: `${medicineStockPercentage}% Stock` }
                ]}
                status={stats.oxygen < 40 ? 'critical' : 'safe'}
                icon={Icons.Package}
@@ -401,15 +791,15 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             />
             <ResourcePanel 
                title="Ambulance Fleet"
-               mainValue={8}
-               maxValue={12}
+               mainValue={ambulanceData?.deployed || 8}
+               maxValue={ambulanceData?.total || 12}
                unit="Deployed"
-               trend="High demand zone: North"
+               trend={ambulanceData?.trend || "API integration pending"}
                details={[
-                  { label: "In-Transit", val: "4 Units" },
-                  { label: "Maintenance", val: "1 Unit" }
+                  { label: "In-Transit", val: ambulanceData?.in_transit ? `${ambulanceData.in_transit} Units` : "N/A" },
+                  { label: "Maintenance", val: ambulanceData?.maintenance ? `${ambulanceData.maintenance} Unit${ambulanceData.maintenance !== 1 ? 's' : ''}` : "N/A" }
                ]}
-               status={'safe'}
+               status={ambulanceData?.deployed ? (ambulanceData.deployed < 4 ? 'critical' : ambulanceData.deployed < 8 ? 'warning' : 'safe') : 'safe'}
                icon={Icons.Truck}
                cssVariables={cssVariables}
             />
@@ -475,53 +865,114 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                <div className="flex items-center gap-2 mb-6">
                    <Icons.AlertCircle className="w-5 h-5 text-red-400" />
                    <h3 className="font-bold text-[var(--text-primary)]">Active System Alerts</h3>
-               </div>
-               <div className="space-y-4 overflow-y-auto pr-2 no-scrollbar">
-                   {alerts.length === 0 && (
-                       <div className="text-gray-500 text-sm italic">No active system alerts.</div>
+                   {alerts.length > 0 && (
+                       <span className="ml-auto text-[10px] bg-red-500/10 text-red-400 px-2 py-1 rounded-full font-bold border border-red-500/20">
+                           {alerts.length} Active
+                       </span>
                    )}
-                   {alerts.map(alert => (
-                       <div key={alert.id} className="bg-red-500/5 border border-red-500/20 p-4 rounded-xl flex gap-4">
-                           <div className="mt-1"><Icons.AlertCircle className="w-4 h-4 text-red-500" /></div>
-                           <div>
-                               <h4 className="text-red-400 font-bold text-sm">{alert.title}</h4>
-                               <p className="text-[var(--text-secondary)] text-xs mt-1">{alert.desc}</p>
-                               <span className="text-[10px] text-gray-600 mt-2 block uppercase font-mono">{alert.timestamp}</span>
+               </div>
+               <div className="space-y-4 overflow-y-auto pr-2 no-scrollbar flex-1">
+                   {alerts.length === 0 && (
+                       <div className="text-gray-500 text-sm italic flex items-center justify-center h-full">
+                           <div className="text-center">
+                               <Icons.CheckCircle2 className="w-12 h-12 mx-auto mb-2 opacity-20" />
+                               <p>No active system alerts.</p>
                            </div>
                        </div>
-                   ))}
+                   )}
+                   {alerts.map(alert => {
+                       const isAgentAlert = alert.id >= 100;
+                       const isCritical = alert.type === 'critical';
+                       const bgColor = isCritical ? 'bg-red-500/5' : 'bg-orange-500/5';
+                       const borderColor = isCritical ? 'border-red-500/20' : 'border-orange-500/20';
+                       const iconColor = isCritical ? 'text-red-500' : 'text-orange-400';
+                       const titleColor = isCritical ? 'text-red-400' : 'text-orange-400';
+                       
+                       return (
+                           <div key={alert.id} className={`${bgColor} border ${borderColor} p-4 rounded-xl flex gap-4 animate-slideIn hover:shadow-lg transition-all`}>
+                               <div className="mt-1">
+                                   <Icons.AlertCircle className={`w-4 h-4 ${iconColor}`} />
+                               </div>
+                               <div className="flex-1">
+                                   <div className="flex items-start justify-between gap-2 mb-1">
+                                       <h4 className={`${titleColor} font-bold text-sm`}>{alert.title}</h4>
+                                       {isAgentAlert && (
+                                           <span className="text-[9px] uppercase font-bold tracking-wider text-gray-500 bg-[var(--element-bg)] px-2 py-0.5 rounded">
+                                               AI Agent
+                                           </span>
+                                       )}
+                                   </div>
+                                   <p className="text-[var(--text-secondary)] text-xs mt-1 leading-relaxed">{alert.desc}</p>
+                                   <div className="flex items-center gap-3 mt-2">
+                                       <span className="text-[10px] text-gray-600 uppercase font-mono">{alert.timestamp}</span>
+                                       {isCritical && (
+                                           <span className="text-[9px] uppercase font-bold text-red-500 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20">
+                                               Critical
+                                           </span>
+                                       )}
+                                   </div>
+                               </div>
+                           </div>
+                       );
+                   })}
                </div>
            </div>
 
-           {/* Outbound Comms */}
-           <div className="space-y-6">
-                <div className="bg-[var(--bg-surface-2)] border border-[var(--border-main)] rounded-2xl p-6 relative overflow-hidden group hover:border-[#00C2FF]/30 transition-colors cursor-pointer">
-                    <div className="flex items-center justify-between mb-4">
-                        <div className="w-10 h-10 rounded-lg bg-[#00C2FF]/10 flex items-center justify-center">
-                            <Icons.Send className="w-5 h-5 text-[#00C2FF]" />
-                        </div>
-                        <span className="text-[10px] bg-[var(--element-bg)] text-[var(--text-secondary)] px-2 py-1 rounded">2m ago</span>
+           {/* Agent Recommendations */}
+           <div className="space-y-6 overflow-y-auto pr-2 no-scrollbar">
+                {recommendations.length === 0 ? (
+                    <div className="bg-[var(--bg-surface-2)] border border-[var(--border-main)] rounded-2xl p-8 flex flex-col items-center justify-center text-center h-full min-h-[300px]">
+                        <Icons.CheckCircle2 className="w-16 h-16 mb-4 opacity-20 text-[var(--text-secondary)]" />
+                        <h4 className="text-[var(--text-primary)] font-bold mb-2">All Systems Optimal</h4>
+                        <p className="text-[var(--text-secondary)] text-sm">No active agent recommendations at this time.</p>
                     </div>
-                    <h4 className="text-[var(--text-primary)] font-bold mb-1">Patient Advisory Broadcast</h4>
-                    <p className="text-[var(--text-secondary)] text-xs mb-3">Sent to 1,204 registered patients in Sector 4.</p>
-                    <div className="bg-[var(--element-bg)] p-3 rounded border border-[var(--border-subtle)] text-xs text-[var(--text-secondary)] font-mono">
-                        "ER wait times currently >2 hrs. Please visit sector 4 clinic for minor ailments."
-                    </div>
-                </div>
-
-                <div className="bg-[var(--bg-surface-2)] border border-[var(--border-main)] rounded-2xl p-6 relative overflow-hidden group hover:border-orange-500/30 transition-colors cursor-pointer">
-                    <div className="flex items-center justify-between mb-4">
-                        <div className="w-10 h-10 rounded-lg bg-orange-500/10 flex items-center justify-center">
-                            <Icons.Package className="w-5 h-5 text-orange-400" />
-                        </div>
-                        <span className="text-[10px] bg-[var(--element-bg)] text-[var(--text-secondary)] px-2 py-1 rounded">15m ago</span>
-                    </div>
-                    <h4 className="text-[var(--text-primary)] font-bold mb-1">Supply Chain Automation</h4>
-                    <p className="text-[var(--text-secondary)] text-xs mb-3">Auto-drafted PO #9920 to Primary Vendor.</p>
-                    <div className="bg-[var(--element-bg)] p-3 rounded border border-[var(--border-subtle)] text-xs text-[var(--text-secondary)] font-mono">
-                        Refill request for 500 N95 masks. Est delivery: 4h.
-                    </div>
-                </div>
+                ) : (
+                    recommendations.map((rec, index) => {
+                        const colors = [
+                            { border: 'border-[#00C2FF]/30', bg: 'bg-[#00C2FF]/10', icon: 'text-[#00C2FF]', agent: 'bg-[#00C2FF]/20 text-[#00C2FF]' },
+                            { border: 'border-green-500/30', bg: 'bg-green-500/10', icon: 'text-green-400', agent: 'bg-green-500/20 text-green-400' },
+                            { border: 'border-purple-500/30', bg: 'bg-purple-500/10', icon: 'text-purple-400', agent: 'bg-purple-500/20 text-purple-400' },
+                            { border: 'border-orange-500/30', bg: 'bg-orange-500/10', icon: 'text-orange-400', agent: 'bg-orange-500/20 text-orange-400' }
+                        ];
+                        const colorScheme = colors[index % colors.length];
+                        
+                        return (
+                            <div key={rec.id} className={`bg-[var(--bg-surface-2)] border ${colorScheme.border} rounded-2xl p-6 relative overflow-hidden group hover:shadow-xl transition-all animate-slideIn`}>
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className={`w-10 h-10 rounded-lg ${colorScheme.bg} flex items-center justify-center`}>
+                                        <Icons.Zap className={`w-5 h-5 ${colorScheme.icon}`} />
+                                    </div>
+                                    <span className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full ${colorScheme.agent}`}>
+                                        {rec.agent} Agent
+                                    </span>
+                                </div>
+                                <h4 className="text-[var(--text-primary)] font-bold text-lg mb-2">{rec.action}</h4>
+                                <div className="space-y-2 mb-4">
+                                    {rec.reason && (
+                                        <div className="flex items-start gap-2">
+                                            <span className="text-[10px] uppercase font-bold text-gray-500 min-w-[60px]">Reason:</span>
+                                            <p className="text-[var(--text-secondary)] text-xs leading-relaxed flex-1">{rec.reason}</p>
+                                        </div>
+                                    )}
+                                    {rec.impact && (
+                                        <div className="flex items-start gap-2">
+                                            <span className="text-[10px] uppercase font-bold text-gray-500 min-w-[60px]">Impact:</span>
+                                            <p className={`text-xs leading-relaxed flex-1 font-medium ${colorScheme.icon}`}>{rec.impact}</p>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="flex gap-3 mt-4 pt-4 border-t border-[var(--border-subtle)]">
+                                    <button className="flex-1 py-2 px-4 bg-[var(--element-bg)] hover:bg-red-500/20 hover:text-red-400 text-[var(--text-secondary)] rounded-lg text-xs font-bold transition-all border border-[var(--border-subtle)] uppercase">
+                                        Dismiss
+                                    </button>
+                                    <button className={`flex-1 py-2 px-4 ${colorScheme.bg} hover:opacity-80 ${colorScheme.icon} rounded-lg text-xs font-bold transition-all shadow-lg uppercase`}>
+                                        Implement
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })
+                )}
            </div>
        </div>
     </div>
@@ -668,6 +1119,15 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
                 {/* Global Status */}
                 <div className="flex items-center gap-4">
+                    {/* WebSocket Connection Status */}
+                    <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${
+                        isConnected 
+                            ? 'bg-green-500/10 border border-green-500/30 text-green-400' 
+                            : 'bg-red-500/10 border border-red-500/30 text-red-400'
+                    }`}>
+                        <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+                        {isConnected ? 'Connected' : 'Disconnected'}
+                    </div>
                     {activeScenario !== 'Normal' && (
                         <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-bold uppercase tracking-wide animate-pulse">
                             <Icons.AlertCircle className="w-3 h-3" />
