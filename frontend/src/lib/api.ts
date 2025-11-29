@@ -65,7 +65,39 @@ export async function triggerCrisisSimulation(crisisType: string) {
   return response.json();
 }
 
+// Get user's current location
+async function getCurrentLocation(): Promise<{ lat: number; lon: number } | null> {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve(null);
+      return;
+    }
+    
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve({
+          lat: position.coords.latitude,
+          lon: position.coords.longitude
+        });
+      },
+      (error) => {
+        console.warn('Could not get location:', error.message);
+        resolve(null);
+      },
+      { timeout: 5000, maximumAge: 300000 } // 5s timeout, cache for 5 mins
+    );
+  });
+}
+
 export async function fetchCurrentAQI() {
-  const response = await fetch(`${API_BASE_URL}/api/v1/environment/aqi`);
+  // Try to get current location
+  const location = await getCurrentLocation();
+  
+  let url = `${API_BASE_URL}/api/v1/environment/aqi`;
+  if (location) {
+    url += `?lat=${location.lat}&lon=${location.lon}`;
+  }
+  
+  const response = await fetch(url);
   return response.json();
 }

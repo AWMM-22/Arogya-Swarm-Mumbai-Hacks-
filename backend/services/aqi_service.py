@@ -17,13 +17,17 @@ class AQIService:
             "mumbai": {"lat": 19.0760, "lon": 72.8777},
         }
     
-    async def get_current_aqi(self, city: str = "Mumbai") -> int:
-        """Get current AQI for a city from OpenWeatherMap API"""
+    async def get_current_aqi(self, city: str = "Mumbai", lat: Optional[float] = None, lon: Optional[float] = None) -> int:
+        """Get current AQI for a city or specific coordinates from OpenWeatherMap API"""
         try:
             if not self.api_key:
                 return self._get_simulated_aqi(city)
             
-            coords = self.city_coords.get(city, self.city_coords["Mumbai"])
+            # Use provided coordinates or fall back to city lookup
+            if lat is not None and lon is not None:
+                coords = {"lat": lat, "lon": lon}
+            else:
+                coords = self.city_coords.get(city, self.city_coords["Mumbai"])
             
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(

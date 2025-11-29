@@ -90,8 +90,9 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [isVoiceActive, setIsVoiceActive] = useState(false);
   const [isFeedPaused, setIsFeedPaused] = useState(false);
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [theme, setTheme] = useState<'dark' | 'light'>('light');
   const [realtimeAQI, setRealtimeAQI] = useState<number | null>(null);
+  const [realtimeWeather, setRealtimeWeather] = useState<string | null>(null);
   const [realtimeResources, setRealtimeResources] = useState<any>(null);
   const [ambulanceData, setAmbulanceData] = useState<any>(null);
   const [latestPrediction, setLatestPrediction] = useState<any>(null);
@@ -119,6 +120,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const stats = {
     ...statsBase,
     aqi: currentAQI,
+    weather: activeScenario === 'Normal' && realtimeWeather ? realtimeWeather : statsBase.weather,
     risk: activeScenario === 'Normal' ? getRiskLevel(currentAQI, activeScenario) : statsBase.risk,
     beds: realtimeResources?.beds ? {
       free: Object.values(realtimeResources.beds as Record<string, {available: number}>).reduce((sum: number, dept: any) => sum + (dept.available || 0), 0),
@@ -232,6 +234,45 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     loadAQI();
     // Fallback polling every 5 minutes (WebSocket provides updates every 30 seconds)
     const interval = setInterval(loadAQI, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [activeScenario]);
+
+  // Fetch real-time weather
+  useEffect(() => {
+    const loadWeather = async () => {
+      if (activeScenario === 'Normal') {
+        try {
+          // Get user location for weather
+          const getLocation = (): Promise<{lat: number, lon: number} | null> => {
+            return new Promise((resolve) => {
+              if (!navigator.geolocation) {
+                resolve(null);
+                return;
+              }
+              navigator.geolocation.getCurrentPosition(
+                (position) => resolve({lat: position.coords.latitude, lon: position.coords.longitude}),
+                () => resolve(null),
+                {timeout: 5000, maximumAge: 300000}
+              );
+            });
+          };
+          
+          const location = await getLocation();
+          let url = 'http://localhost:8000/api/v1/environment/weather';
+          if (location) {
+            url += `?lat=${location.lat}&lon=${location.lon}`;
+          }
+          
+          const response = await fetch(url);
+          const data = await response.json();
+          setRealtimeWeather(data.description);
+        } catch (err) {
+          console.error('Failed to load real-time weather:', err);
+        }
+      }
+    };
+    loadWeather();
+    const interval = setInterval(loadWeather, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [activeScenario]);
 
@@ -650,7 +691,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                        <h2 className="text-2xl font-display font-bold text-[var(--text-primary)] flex items-center gap-3">
                           48-Hour Forecast
                           <span className="px-2 py-1 rounded text-[10px] font-mono bg-[#00C2FF]/10 text-[#00C2FF] border border-[#00C2FF]/20 flex items-center gap-1">
-                             <Icons.Brain className="w-3 h-3" /> {latestPrediction?.confidence ? `${Math.floor(latestPrediction.confidence)}%` : '94%'} CONFIDENCE
+                             <Icons.Brain className="w-3 h-3" /> {latestPrediction?.confidence_score ? `${Math.floor(latestPrediction.confidence_score)}%` : '75%'} CONFIDENCE
                           </span>
                        </h2>
                    </div>

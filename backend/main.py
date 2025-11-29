@@ -70,7 +70,7 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
 
 async def broadcast_aqi_updates():
-    """Background task: Broadcast real-time AQI updates every 15 seconds"""
+    """Background task: Broadcast real-time AQI updates every 30 seconds"""
     aqi_service = AQIService(settings.SAFAR_AIR_API_KEY)
     
     while True:
@@ -85,12 +85,12 @@ async def broadcast_aqi_updates():
                 "timestamp": datetime.now().isoformat()
             })
             
-            # Wait 15 seconds before next update
-            await asyncio.sleep(15)
+            # Wait 30 seconds before next update
+            await asyncio.sleep(30)
             
         except Exception as e:
             print(f"Error broadcasting AQI: {e}")
-            await asyncio.sleep(15)  # Retry in 15 seconds on error
+            await asyncio.sleep(30)  # Retry in 30 seconds on error
 
 async def run_agent_monitoring():
     """Background task: Run agent system every 5 minutes"""

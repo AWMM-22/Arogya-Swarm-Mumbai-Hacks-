@@ -1,1 +1,0 @@
-# Crisis simulation scenarios

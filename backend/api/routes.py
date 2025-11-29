@@ -319,13 +319,52 @@ async def test_agent_reasoning():
         "timestamp": datetime.now().isoformat()
     }
 
+@router.get("/environment/weather")
+async def get_current_weather(lat: Optional[float] = None, lon: Optional[float] = None):
+    """Get real-time weather from OpenWeatherMap API for current location or Mumbai"""
+    from services.weather_service import WeatherService
+    import os
+    
+    weather_service = WeatherService(os.getenv("OPENWEATHERMAP_API_KEY"))
+    
+    if lat is not None and lon is not None:
+        # Use coordinates
+        import httpx
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(
+                    "https://api.openweathermap.org/data/2.5/weather",
+                    params={
+                        "lat": lat,
+                        "lon": lon,
+                        "appid": os.getenv("OPENWEATHERMAP_API_KEY"),
+                        "units": "metric"
+                    },
+                    timeout=10.0
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    return {
+                        "temperature": data["main"]["temp"],
+                        "description": data["weather"][0]["description"],
+                        "humidity": data["main"]["humidity"],
+                        "wind_speed": data["wind"]["speed"],
+                        "timestamp": datetime.now().isoformat()
+                    }
+            except Exception as e:
+                print(f"Weather API error: {e}")
+    
+    # Fall back to city name
+    weather_data = await weather_service.get_current_weather("Mumbai")
+    return weather_data
+
 @router.get("/environment/aqi")
-async def get_current_aqi():
-    """Get real-time AQI from OpenWeatherMap API"""
+async def get_current_aqi(lat: Optional[float] = None, lon: Optional[float] = None):
+    """Get real-time AQI from OpenWeatherMap API for current location or Mumbai"""
     from services.aqi_service import AQIService
     
     aqi_service = AQIService()
-    aqi = await aqi_service.get_current_aqi("Mumbai")
+    aqi = await aqi_service.get_current_aqi("Mumbai", lat=lat, lon=lon)
     
     # Determine quality level
     if aqi <= 50:
@@ -351,6 +390,6 @@ async def get_current_aqi():
         "aqi": aqi,
         "quality": quality,
         "color": color,
-        "city": "Mumbai",
+        "city": "Mumbai" if not lat else f"Lat: {lat}, Lon: {lon}",
         "timestamp": datetime.now().isoformat()
     }
